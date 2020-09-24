@@ -1,0 +1,189 @@
+function ARIA2_IP(datasource,ouputsource,segmethod,pix2cm,nop,stptype,imgmthd)
+% This function segment images from the background
+
+% datasource: location of segmented image data
+% outputsource: location to save the extracted traits
+% nop: number of processor
+% segmethod: segmentation method (1 for user defined, 2 for kmeans)
+% pix2cm : pixel to cemtemeter conversion
+% all inputs are in string.
+%
+
+% Developers : Zaki Jubery,Hsiang Sing Naik & Nigel Lee
+% Copyright : Baskar Ganapathysubramanian
+% Version 1 : July 14, 2013 by Hsiang Sing Naik & Nigel Lee
+% Version 2: December 7, 2016 by Zaki Jubery
+addpath('UserDefinedFunctions');
+%% Image Processing function
+warning off;
+% Force the variables pix2cm and nop are to be numbers
+if isstr(pix2cm)==1
+    pix2cm=str2num(pix2cm);
+end
+if isstr(nop)==1
+    nop=str2num(nop);
+end
+
+if isstr(stptype)==1
+    stptype=str2num(stptype);
+end
+
+if isstr(imgmthd)==1
+    stptype=str2num(imgmthd);
+end
+
+% Image data directory
+inputFolder1=datasource;
+%Output directory
+outputFolder=fullfile(ouputsource,'ProcessedImages');
+mkdir(outputFolder);
+%% Prepare folders to save the output
+fileList = dir(inputFolder1);
+% Create folder to store QC images
+QCimage2=fullfile(outputFolder,'QC_Seg_image');
+mkdir(QCimage2);
+% Create folder to store QC overlapping images
+QCimage3=fullfile(outputFolder,'QC_Seg_overlapping_image');
+mkdir(QCimage3);
+% Create folder to store the segmented image data
+Segimage=fullfile(outputFolder,'Seg_image_data');
+mkdir(Segimage);
+logfilename = ['log_ImageProcessing', strrep(datestr(clock), ':' , '-' ) ,'.txt'] ;
+diary(fullfile(outputFolder,logfilename));
+%% Prepare data for parallel processing(find the location and total number of images)
+Timagecount=1;
+% write the expected types of extensions
+imagetypelist= {'.jpg','.JPG','JPEG','.tif','.png'};
+fileList2=fileList;
+for K=1:length(fileList)
+    if endsWith(fileList(K).name,imagetypelist)
+        fileList2(Timagecount)=fileList(K);
+        Timagecount=Timagecount+1;
+    end
+end
+
+Points=zeros(Timagecount-1,1);
+if stptype==1
+    mh=msgbox({'Select the starting point of the root by clicking using any mouse button.'; 'Press BACKSPACE to unselect the point if it is needed.'; 'Press ENTER to complete the selection.'});
+    th = findall(mh, 'Type', 'Text');
+    th.FontSize = 12;
+    deltaWidth = sum(th.Extent([1,3]))-mh.Position(3) + th.Extent(1);
+    deltaHeight = sum(th.Extent([2,4]))-mh.Position(4) + 10;
+    mh.Position([3,4]) = mh.Position([3,4]) + [deltaWidth, deltaHeight];
+    mh.Resize = 'on';
+    pause(1);
+    
+    h=figure;
+    set(h, 'MenuBar', 'none');
+    Points=zeros(Timagecount-1,1);
+    for K=1:Timagecount-1
+        Imagename=fullfile(inputFolder1,fileList2(K).name);
+        I3=imread(Imagename);
+        %I3=imrotate(I3,180);
+        imshow(I3); title('Click any mouse button to select point and press ENTER');
+        set(gcf,'units','normalized','outerposition',[0 0 1 1]);
+        [~,y] = getpts;
+        Points(K,1)=round(y,0);
+    end
+    
+    close(h);
+    close(mh);
+end
+% Prepare message box to show the progress
+t = datetime('now');
+DateString = datestr(t);
+mh=msgbox({'Processing Images...Please Wait ...'; strcat('Total number of images is ...',num2str(Timagecount-1));'Estimated processing time per image is between 10 to 30 seconds'; strcat('Expected completion time is between ...', num2str(round((Timagecount-1)/(6*nop)),2),'  to  ', num2str(round(3*(Timagecount-1)/(2*nop)),2),'  mintues'); strcat('Processing started at ... ', DateString)} );
+th = findall(mh, 'Type', 'Text');
+th.FontSize = 12;
+deltaWidth = sum(th.Extent([1,3]))-mh.Position(3) + th.Extent(1);
+deltaHeight = sum(th.Extent([2,4]))-mh.Position(4) + 10;
+mh.Position([3,4]) = mh.Position([3,4]) + [deltaWidth, deltaHeight];
+mh.Resize = 'on';
+parpool('local',nop);
+pause(0.01)
+nNumIterations=Timagecount-1;
+strWindowTitle='Segmenting Images... Please Wait ...  ';
+nProgressStepSize=nop;
+nWidth=700;
+nHeight=75;
+ppm = ParforProgMon(strWindowTitle, nNumIterations, nProgressStepSize, nWidth, nHeight);
+
+%% Process the images
+parfor K=1:Timagecount-1
+    try
+        % Read the image
+        Imagename=fullfile(inputFolder1,fileList2(K).name);
+        I3=imread(Imagename);
+        nx1=size(I3);
+        % Rotate the image if it is in landscape sytle
+        if nx1(1)<nx1(2)
+            I3=imrotate(I3,-90);
+        end
+        %I3=imrotate(I3,180);
+        Errorcode=1;
+        
+        I2=I3;
+        if stptype==1
+            % Crop boundary of the image
+            I2=I3(Points(K,1):end-500,200:end-200,:);
+        end
+        
+        if imgmthd==1
+            %I = ~im2bw(I2);
+            [I,~] = createMask_scanner(I2);
+        else
+            % Select the segmentation method
+            if segmethod==2
+                [I] = Segmentation_kmeans(I2);
+            elseif segmethod==1 
+                [I] = Segmentation_userdefined(I2);
+            elseif segmethod==0
+                [I] = Segmentation_default(I2);
+            end
+        end
+        
+        
+        Errorcode=2;
+        fname=par_fname(fileList2(K));
+        disp(strcat('Currently processing ',num2str(K),' of ',num2str(Timagecount-1),' ,image name:',fname));
+        % Save the root images for quality check
+        fname2=fname;
+        fname2(fname2=='_') = '-';
+        
+        figure (2);
+        subplot(1,2,1);
+        imshow(I,'InitialMagnification', 'fit')
+        title('Segmented Root')
+        subplot(1,2,2);
+        imshow(I2,'InitialMagnification', 'fit')
+        title('Original Root')
+        hold on;
+%         suptitle(fname2(1:end-4))
+        % set the figure to full screen
+        set(gcf,'units','normalized','outerposition',[0 0 1 1]);
+        filename=fullfile(QCimage2,strcat(fname2(1:end-4),'.jpg'));
+        saveas(gcf,filename,'jpg');
+        Errorcode=3;
+        
+        figure(3)
+        warning off;
+        imshowpair(I2,I);
+        title(fname2(1:end-4))
+        % set the figure to full screen
+        set(gcf,'units','normalized','outerposition',[0 0 1 1]);
+        filename=fullfile(QCimage3,strcat(fname2(1:end-4),'.jpg'));
+        saveas(gcf,filename,'jpg');
+        savefilename = fileList2(K).name;
+        imwrite(I,fullfile(Segimage,strcat(savefilename(1:end-4),'.jpg')),'jpg');
+        parsave (fullfile(Segimage,strcat(savefilename(1:end-4),'.mat')),I,I2,pix2cm,fname);
+        
+        ppm.increment();
+    catch
+        warning(strcat('Error code for',fname,' is ',num2str(Errorcode)));
+    end
+end
+poolobj = gcp('nocreate');
+delete(poolobj);
+close all;
+msgbox({'Image Segmentation' 'Completed'});
+end

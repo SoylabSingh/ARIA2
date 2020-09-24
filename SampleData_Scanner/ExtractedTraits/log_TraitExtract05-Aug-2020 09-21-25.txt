@@ -1,0 +1,5 @@
+Starting parallel pool (parpool) using the 'local' profile ...
+Connected to the parallel pool (number of workers: 1).
+Currently processing1 of1 ,image name:sample1
+Parallel pool using the 'local' profile is shutting down.
+ARIA2
