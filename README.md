@@ -24,7 +24,6 @@ GUI development: Zaki Jubery
 ### How to use it
 #### Setting up:
 * After downloading the source code. Run ARIA2.m function.
-* Alternatively, download the stand-alone version (does not require MATLAB) from [here]  (https://drive.google.com/drive/u/0/folders/1kO_3oMtZSEuBdUGk6mHKMqtakPtJ_UXX)
 
 #### Image Processing (GUI):
 * Image Location : select the location of the image folder.
